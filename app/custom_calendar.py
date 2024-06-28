@@ -11,6 +11,10 @@ def busy_highlight(text):
 
 class CustomCalendar(SimpleCalendar):
 
+    def __init__(self, routine, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.routine = routine
+
     async def start_calendar(
         self,
         year: int = datetime.now().year,
@@ -49,9 +53,10 @@ class CustomCalendar(SimpleCalendar):
 
         def highlight_day():
             day_string = format_day_string()
-            busy_days = ["1","2","3"]
 
-            if day_string in busy_days:
+            if str(year) in self.routine.get("years") \
+                and str(month) in self.routine.get("months") \
+                and day_string in self.routine.get("days"):
                 return busy_highlight(day_string)
             if now_month == month and now_year == year and now_day == day:
                 return highlight(day_string)
