@@ -2,11 +2,12 @@ from datetime import datetime
 
 from aiogram import F, Router
 
-from aiogram.filters import CommandStart
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import Message, CallbackQuery
 from aiogram_calendar import SimpleCalendarCallback, get_user_locale
-
+from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
 import app.keyboards as kb
 
 from .custom_calendar import CustomCalendar
@@ -16,15 +17,19 @@ from config import Config
 
 router = Router()
 
+calendar_data = None
+
 db = DBConnect(database=Config.database, user=Config.user,
                 password=Config.password, host=Config.host)
-
-@router.message(CommandStart)
-async def cmd_start(message: Message):
-    await message.answer('Hello', reply_markup=kb.settings)
-
-
 today = datetime.now()
+
+@router.message(Command("start"))
+async def cmd_start(message: Message):
+    await message.answer('Привет! Я помогу тебе запланировать твою неделю. Выбери дату:', reply_markup=kb.settings)
+
+@router.message(Command("calendar"))
+async def cmd_calendar(message: Message):
+    await message.answer('Выбери дату:', reply_markup=kb.settings)
 
 @router.callback_query(F.data == "Calendar")
 async def nav_cal_handler_date(callback_query: CallbackQuery):
@@ -58,10 +63,58 @@ async def process_simple_calendar(callback_query: CallbackQuery, callback_data: 
     # If a date was selected, fetch the routine for that date and send it as a message
     if selected:
         routine = await process_get_routine(date)
+        global calendar_data
+        calendar_data = date
         await callback_query.message.answer(
-            f'Планы на {date.strftime("%d/%m/%Y")}: \n {routine}'
+            f'Планы на {date.strftime("%d/%m/%Y")}: \n {routine}',
+            reply_markup=kb.crud
         )
 
+@router.callback_query(F.data == "cal_add")
+async def process_add_calendar(callback_query: CallbackQuery, state: FSMContext):
+    await state.set_state("add_note")
+    await callback_query.message.answer("Что необходимо добавить?")
+
+@router.message(StateFilter("add_note"))
+async def add_note(message: Message, state: FSMContext):
+    to_do_list = await state.get_data()
+    if to_do_list.get("notes") is None:
+        to_do_list["notes"] = {}
+
+    to_do_list["notes"][message.text] = message.text
+    await state.set_data(to_do_list)
+
+    await state.set_state("next_add")
+    await message.answer("Добавим что- то ещё?", reply_markup=kb.yes_no)
+
+@router.callback_query(StateFilter("next_add"), F.data == "yes")
+async def process_add_next(callback_query: CallbackQuery, state: FSMContext):
+    await state.set_state("add_note")
+    await callback_query.message.answer("Что необходимо добавить?")
+
+@router.callback_query(StateFilter("next_add"), F.data == "no")
+async def process_add_next(callback_query: CallbackQuery, state: FSMContext):
+    to_do_list = await state.get_data()
+    await state.set_state("insert_db")
+    await callback_query.message.answer(f"Хорошо, это все что нужно добавить на \
+        {calendar_data.strftime('%d/%m/%Y')}?\n {"\n".join(to_do_list["notes"].values())}",
+        reply_markup=kb.yes_no)
+
+@router.callback_query(StateFilter("insert_db"), F.data == "yes")
+async def process_insert_db(callback_query: CallbackQuery, state: FSMContext):
+    to_do_list = await state.get_data()
+    await add_to_routine(db, calendar_data, to_do_list["notes"].values())
+    await state.clear()
+    await callback_query.message.answer("Готово!")
+
+@router.callback_query(StateFilter("insert_db"), F.data == "no")
+async def process_insert_db(callback_query: CallbackQuery, state: FSMContext):
+    F.data = "yes"
+    await state.set_state("add_note")
+
+# @router.callback_query(F.data == "cal_del")
+
+# @router.callback_query(F.data == "del_all")
 
 async def process_get_routine(_date):
     # Connect to the database
@@ -97,3 +150,12 @@ async def get_routine_dates(_db):
     }
 
     return _routine
+
+async def add_to_routine(_db, _date, _descriptions):
+    _conn = await _db.connect()
+    async with _conn.transaction():
+        for description in _descriptions:
+            await _conn.execute('''
+                insert into "routine" (event_date, description)
+                values ($1::date, $2)
+                ''', _date, description)
