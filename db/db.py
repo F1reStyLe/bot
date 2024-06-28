@@ -9,6 +9,11 @@ class DBConnect:
         self.host = host
 
     async def connect(self):
-        conn = await aspg.connect(database=self.db, user=self.user,
-                              password=self.password, host=self.host)
+        try:
+            conn = await aspg.connect(database=self.db,
+                                    user=self.user,
+                                    password=self.password,
+                                    host=self.host)
+        except Exception as e:
+            print(f"Ошибка при подключении к базе данных: {e}")
         return conn
