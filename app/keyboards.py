@@ -18,3 +18,12 @@ yes_no = InlineKeyboardMarkup(inline_keyboard=[
         InlineKeyboardButton(text='Нет', callback_data="no"),
     ]
 ])
+
+def kb_builder(_items):
+    keyboard = []
+
+    for item in _items:
+        keyboard.append([InlineKeyboardButton(text=item[1], callback_data=str(item[0]))])
+
+    builder = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    return builder
