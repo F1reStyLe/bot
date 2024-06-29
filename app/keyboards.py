@@ -12,6 +12,12 @@ crud = InlineKeyboardMarkup(inline_keyboard=[
     ]
 ])
 
+create = InlineKeyboardMarkup(inline_keyboard=[
+    [
+        InlineKeyboardButton(text='Добавить', callback_data="cal_add")
+    ]
+])
+
 yes_no = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text='Да', callback_data="yes"),

@@ -65,10 +65,13 @@ async def process_simple_calendar(callback_query: CallbackQuery, callback_data: 
         routine = await process_get_routine(date)
         global calendar_data
         calendar_data = date
-        await callback_query.message.answer(
-            f'Планы на {date.strftime("%d/%m/%Y")}: \n {"\n".join(i[1] for i in routine)}',
-            reply_markup=kb.crud
-        )
+        if len(routine) > 0:
+            await callback_query.message.answer(
+                f'Планы на {date.strftime("%d/%m/%Y")}: \n {"\n".join(i[1] for i in routine)}',
+                reply_markup=kb.crud
+            )
+        else:
+            await callback_query.message.answer("Планы отсутствуют", reply_markup=kb.create)
 
 @router.callback_query(F.data == "cal_add")
 async def process_add_note(callback_query: CallbackQuery, state: FSMContext):
@@ -98,7 +101,7 @@ async def process_add_next(callback_query: CallbackQuery, state: FSMContext):
     if calendar_data:
         await state.set_state("insert_db")
         await callback_query.message.answer(f"Хорошо, это все что нужно добавить на \
-            {calendar_data.strftime('%d/%m/%Y')}?\n {"\n".join(to_do_list["notes"])}",
+{calendar_data.strftime('%d/%m/%Y')}?\n {"\n".join(to_do_list["notes"])}",
             reply_markup=kb.yes_no)
     else:
         await state.clear()
@@ -129,7 +132,14 @@ async def add_note(callback_query: Message, state: FSMContext):
     await state.clear()
     await callback_query.message.answer("Запись удалена!")
 
-# @router.callback_query(F.data == "del_all")
+@router.callback_query(F.data == "del_all")
+async def process_del_all(callback_query: CallbackQuery, state: FSMContext):
+    if calendar_data:
+        await del_all_routine(calendar_data)
+        await callback_query.message.answer("Все записи удалены!")
+    else:
+        await callback_query.message.answer(f"Вы пытаетесь удалить записи не выбрав дату...",
+                                        reply_markup=kb.settings)
 
 async def process_get_routine(_date):
     # Connect to the database
@@ -149,7 +159,7 @@ async def process_get_routine(_date):
             _routine.append((desc["row_id"], desc["description"]))
 
     # Return the routine for the given date
-    return _routine if len(_routine) > 0  else ["Планы отсутствуют"]
+    return _routine
 
 async def get_routine_dates(_db):
     _conn = await _db.connect()
@@ -182,3 +192,11 @@ async def del_routine(_db, _row_id):
             delete from "routine"
             where row_id = $1
             ''', int(_row_id))
+
+async def del_all_routine(_date):
+    _conn = await db.connect()
+    async with _conn.transaction():
+        await _conn.execute('''
+            delete from "routine"
+            where event_date = $1
+            ''', _date)
