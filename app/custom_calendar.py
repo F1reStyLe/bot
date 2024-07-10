@@ -120,6 +120,25 @@ class CustomCalendar(SimpleCalendar):
                 ))
             kb.append(days_row)
 
+        weeks_row = []
+
+        weeks_row.append(InlineKeyboardButton(
+            text="This week",
+            callback_data="get_week_routines"
+        ))
+
+        weeks_row.append(InlineKeyboardButton(
+            text="Next week",
+            callback_data="get_next_week_routines"
+        ))
+
+        weeks_row.append(InlineKeyboardButton(
+            text="This month",
+            callback_data="get_month_routines"
+        ))
+
+        kb.append(weeks_row)
+
         # nav today & cancel button
         cancel_row = []
         cancel_row.append(InlineKeyboardButton(
