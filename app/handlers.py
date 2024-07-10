@@ -28,8 +28,17 @@ async def cmd_start(message: Message):
     await message.answer('Привет! Я помогу тебе запланировать твою неделю. Выбери дату:', reply_markup=kb.settings)
 
 @router.message(Command("calendar"))
-async def cmd_calendar(message: Message):
-    await message.answer('Выбери дату:', reply_markup=kb.settings)
+async def nav_cal_handler_date(message: Message):
+    routine = await get_routine_dates(db)
+
+    calendar = CustomCalendar(routine=routine,
+        locale=await get_user_locale(message.from_user), show_alerts=True
+    )
+    calendar.set_dates_range(datetime(today.year - 3, 1, 1), datetime(today.year + 3, 12, 31))
+    await message.answer(
+        "Выберите дату: ",
+        reply_markup=await calendar.start_calendar(year=today.year, month=today.month)
+    )
 
 @router.callback_query(F.data == "Calendar")
 async def nav_cal_handler_date(callback_query: CallbackQuery):
@@ -117,8 +126,8 @@ async def process_insert_db(callback_query: CallbackQuery, state: FSMContext):
 
 @router.callback_query(StateFilter("insert_db"), F.data == "no")
 async def process_insert_db(callback_query: CallbackQuery, state: FSMContext):
-    F.data = "yes"
     await state.set_state("add_note")
+    await callback_query.message.answer("Что необходимо добавить?")
 
 @router.callback_query(F.data == "cal_del")
 async def process_del_note(callback_query: CallbackQuery, state: FSMContext):
@@ -141,22 +150,65 @@ async def process_del_all(callback_query: CallbackQuery, state: FSMContext):
         await callback_query.message.answer(f"Вы пытаетесь удалить записи не выбрав дату...",
                                         reply_markup=kb.settings)
 
-async def process_get_routine(_date):
-    # Connect to the database
+@router.callback_query(F.data == "get_week_routines")
+async def process_get_week(callback_query: CallbackQuery, state: FSMContext):
+    routine = await process_get_routine(datetime.today(), "week")
+    if len(routine) > 0:
+        await callback_query.message.answer(
+            f'Планы на эту неделю:\
+\n {"\n".join(f'{i[2]}: {i[1]}' for i in sorted(routine, key = lambda x: x[2]))}'
+        )
+    else:
+        await callback_query.message.answer("Планы отсутствуют", reply_markup=kb.create)
+
+@router.callback_query(F.data == "get_next_week_routines")
+async def process_get_week(callback_query: CallbackQuery, state: FSMContext):
+    routine = await process_get_routine(datetime.today(), "next_week")
+    if len(routine) > 0:
+        await callback_query.message.answer(
+            f'Планы на слудующую неделю:\
+\n {"\n".join(f'{i[2]}: {i[1]}' for i in sorted(routine, key = lambda x: x[2]))}'
+        )
+    else:
+        await callback_query.message.answer("Планы отсутствуют", reply_markup=kb.create)
+
+@router.callback_query(F.data == "get_month_routines")
+async def process_get_week(callback_query: CallbackQuery, state: FSMContext):
+    routine = await process_get_routine(datetime.today(), "month")
+    if len(routine) > 0:
+        await callback_query.message.answer(
+            f'Планы на месяц:\
+\n {"\n".join(f'{i[2]}: {i[1]}' for i in sorted(routine, key = lambda x: x[2]))}'
+        )
+    else:
+        await callback_query.message.answer("Планы отсутствуют", reply_markup=kb.create)
+
+
+async def process_get_routine(_date, _period="day"):
+     # Connect to the database
     _conn = await db.connect()
 
     # Initialize the routine string
     _routine = []
 
+    match _period:
+        case "day":
+            condition_string = "event_date = $1::date"
+        case "week":
+            condition_string = "date_part('week', event_date) = date_part('week', $1::date)"
+        case "next_week":
+            condition_string = "date_part('week', event_date) = date_part('week', $1::date) + 1"
+        case "month":
+            condition_string = "date_part('month', event_date) = date_part('month', $1::date)"
+
     # Execute a SQL query to fetch the routine for the given date
     async with _conn.transaction():
         async for desc in _conn.cursor('''
-            select row_id, description
+            select row_id, description, event_date
             from "routine"
-            where event_date = $1::date
-            ''', _date):
+            where ''' + condition_string, _date):
             # Append the description to the routine string, separated by a newline
-            _routine.append((desc["row_id"], desc["description"]))
+            _routine.append((desc["row_id"], desc["description"], desc["event_date"]))
 
     # Return the routine for the given date
     return _routine
