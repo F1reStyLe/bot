@@ -54,9 +54,9 @@ class CustomCalendar(SimpleCalendar):
         def highlight_day():
             day_string = format_day_string()
 
-            if str(year) in self.routine.get("years") \
-                and str(month) in self.routine.get("months") \
-                and day_string in self.routine.get("days"):
+            if datetime(year, month, day).date() in self.routine:
+                if now_month == month and now_year == year and now_day == day:
+                    return busy_highlight(highlight(day_string))
                 return busy_highlight(day_string)
             if now_month == month and now_year == year and now_day == day:
                 return highlight(day_string)

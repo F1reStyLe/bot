@@ -215,16 +215,13 @@ async def process_get_routine(_date, _period="day"):
 
 async def get_routine_dates(_db):
     _conn = await _db.connect()
-    _busy_days = await _conn.fetchrow('''select array_agg(extract(day from event_date)::text) days,
-                                            array_agg(extract(months from event_date)::text) months,
-                                            array_agg(extract(year from event_date)::text) years
-                                        from "routine"''')
-
-    _routine = {
-        "days": set(_busy_days["days"]),   # Set of busy days
-        "months": set(_busy_days["months"]),   # Set of busy months
-        "years": set(_busy_days["years"]),   # Set of busy years
-    }
+    _routine = []
+    async with _conn.transaction():
+        async for desc in _conn.cursor('''
+                select event_date
+                from "routine"'''):
+                # Append the description to the routine string, separated by a newline
+                _routine.append((desc["event_date"]))
 
     return _routine
 
