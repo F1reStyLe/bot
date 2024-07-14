@@ -76,7 +76,8 @@ async def process_simple_calendar(callback_query: CallbackQuery, callback_data: 
         calendar_data = date
         if len(routine) > 0:
             await callback_query.message.answer(
-                f'Планы на {date.strftime("%d/%m/%Y")}: \n {"\n".join(i[1] for i in routine)}',
+                f'Планы на {date.strftime("%d/%m/%Y")}:\n {"\n".join(f"{i[3]:%H:%M} - {i[1]}"\
+                                                                for i in sorted(routine, key = lambda x: x[3]))}',
                 reply_markup=kb.crud
             )
         else:
@@ -85,7 +86,9 @@ async def process_simple_calendar(callback_query: CallbackQuery, callback_data: 
 @router.callback_query(F.data == "cal_add")
 async def process_add_note(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state("add_note")
-    await callback_query.message.answer("Что необходимо добавить?")
+    await callback_query.message.answer('''Что необходимо добавить?\n
+Если необходимо добавить время,\n
+запишите через знак "=" в формате чч:мм''')
 
 @router.message(StateFilter("add_note"))
 async def add_note(message: Message, state: FSMContext):
@@ -93,7 +96,13 @@ async def add_note(message: Message, state: FSMContext):
     if to_do_list.get("notes") is None:
         to_do_list["notes"] = []
 
-    to_do_list["notes"].append(message.text)
+    try:
+        ev_note, ev_time = message.text.split("=")
+    except ValueError:
+        ev_note = message.text
+        ev_time = "00:00"
+
+    to_do_list["notes"].append({"note": ev_note, "time": datetime.strptime(ev_time.strip(), '%H:%M').time()})
     await state.set_data(to_do_list)
 
     await state.set_state("next_add")
@@ -110,7 +119,7 @@ async def process_add_next(callback_query: CallbackQuery, state: FSMContext):
     if calendar_data:
         await state.set_state("insert_db")
         await callback_query.message.answer(f"Хорошо, это все что нужно добавить на \
-{calendar_data.strftime('%d/%m/%Y')}?\n {"\n".join(to_do_list["notes"])}",
+{calendar_data.strftime('%d/%m/%Y')}?\n{"\n".join(f'{i["time"]}: {i["note"]}' for i in to_do_list["notes"])}",
             reply_markup=kb.yes_no)
     else:
         await state.clear()
@@ -204,11 +213,11 @@ async def process_get_routine(_date, _period="day"):
     # Execute a SQL query to fetch the routine for the given date
     async with _conn.transaction():
         async for desc in _conn.cursor('''
-            select row_id, description, event_date
+            select row_id, description, event_date, coalesce(event_time, '00:00') as event_time
             from "routine"
             where ''' + condition_string, _date):
             # Append the description to the routine string, separated by a newline
-            _routine.append((desc["row_id"], desc["description"], desc["event_date"]))
+            _routine.append((desc["row_id"], desc["description"], desc["event_date"], desc["event_time"]))
 
     # Return the routine for the given date
     return _routine
@@ -225,14 +234,14 @@ async def get_routine_dates(_db):
 
     return _routine
 
-async def add_to_routine(_db, _date, _descriptions):
+async def add_to_routine(_db, _date, _notes):
     _conn = await _db.connect()
     async with _conn.transaction():
-        for description in _descriptions:
+        for note in _notes:
             await _conn.execute('''
-                insert into "routine" (event_date, description)
-                values ($1::date, $2)
-                ''', _date, description)
+                insert into "routine" (event_date, event_time, description)
+                values ($1::date, $2::time, $3)
+                ''', _date, note["time"], note["note"])
 
 async def del_routine(_db, _row_id):
     _conn = await _db.connect()
