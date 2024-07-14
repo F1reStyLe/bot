@@ -28,8 +28,8 @@ yes_no = InlineKeyboardMarkup(inline_keyboard=[
 def kb_builder(_items):
     keyboard = []
 
-    for item in _items:
-        keyboard.append([InlineKeyboardButton(text=item[1], callback_data=str(item[0]))])
+    for item in sorted(_items, key = lambda x: x[3]):
+        keyboard.append([InlineKeyboardButton(text=f'{item[1]} {item[3]:%H:%M}', callback_data=str(item[0]))])
 
     builder = InlineKeyboardMarkup(inline_keyboard=keyboard)
     return builder
